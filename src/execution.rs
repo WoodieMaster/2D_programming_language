@@ -1,14 +1,18 @@
 extern crate core;
 
+use super::definitions as def;
+use def::instructions as inst;
+
 use core::fmt;
+use std::arch::x86_64::_mm256_andnot_pd;
 use std::fmt::{Debug, Display, Formatter, Pointer, Write};
+use std::io::read_to_string;
+use std::ops::RangeInclusive;
 
 use std::str::FromStr;
 use std::thread::sleep;
 use std::time::Duration;
 use IPUpdateResult::Normal;
-
-const IGNORED_CHARS: &'static str = "\r";
 
 pub struct CodeGrid {
     grid: Vec<Vec<char>>,
@@ -22,7 +26,7 @@ impl FromStr for CodeGrid {
     fn from_str(code: &str) -> Result<Self, Self::Err> {
         let mut grid: Vec<Vec<char>> = code.split('\n').map(
             |l| l.chars().filter(
-                |c| !IGNORED_CHARS.contains(c.clone())
+                |c| !def::IGNORED_CHARS.contains(c.clone())
             ).collect()).collect();
 
         let mut line_length = 0;
@@ -68,8 +72,8 @@ enum IPUpdateResult {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct Vec2 {
-    x: usize,
-    y: usize
+    x: isize,
+    y: isize
 }
 
 impl Display for Vec2 {
@@ -79,7 +83,7 @@ impl Display for Vec2 {
 }
 
 impl Vec2 {
-    fn new(x: usize, y: usize) -> Self {
+    fn new(x: isize, y: isize) -> Self {
         return Self { x, y }
     }
 
@@ -108,20 +112,52 @@ impl InstructionPointer {
     }
 
     fn update(&mut self, code_grid: &CodeGrid) -> IPUpdateResult {
-        let current_char = code_grid.grid[self.position.y][self.position.x];
+        let current_char = code_grid.grid[self.position.y as usize][self.position.x as usize];
 
+        match current_char {
+            inst::MOVE_UP => self.movement = Vec2 {x: 0, y: -1},
+            inst::MOVE_DOWN => self.movement = Vec2 {x: 0, y: 1},
+            inst::MOVE_LEFT => self.movement = Vec2 {x: -1, y: 0},
+            inst::MOVE_RIGHT => self.movement = Vec2 {x: 1, y: 0},
+            inst::REMOVE_IP => return IPUpdateResult::DeleteSelf,
+            inst::SPLIT_IP_HORIZONTAL => {
+                self.movement = Vec2 {x: 1, y: 0};
+
+                let mut new_ip = InstructionPointer {
+                    movement: Vec2 {x: -1, y: 0},
+                    position: self.position
+                };
+
+                new_ip.position.add(new_ip.movement);
+                self.position.add(self.movement);
+                return IPUpdateResult::AddIP(new_ip);
+            },
+            inst::SPLIT_IP_VERTICAL => {
+                self.movement = Vec2 {x: 0, y: 1};
+
+                let mut new_ip = InstructionPointer {
+                    movement: Vec2 {x: 0, y: -1},
+                    position: self.position
+                };
+
+                new_ip.position.add(new_ip.movement);
+                self.position.add(self.movement);
+                return IPUpdateResult::AddIP(new_ip);
+            },
+            _ => {}
+        }
         self.position.add(self.movement);
 
-        if self.position.x >= code_grid.width {
-            self.position.x -= code_grid.width
+        if self.position.x >= code_grid.width as isize {
+            self.position.x -= code_grid.width as isize
         }else if self.position.x < 0 {
-            self.position.x += code_grid.width
+            self.position.x += code_grid.width as isize
         }
 
-        if self.position.y >= code_grid.height {
-            self.position.y -= code_grid.height
+        if self.position.y >= code_grid.height as isize {
+            self.position.y -= code_grid.height as isize
         }else if self.position.y < 0 {
-            self.position.y += code_grid.height
+            self.position.y += code_grid.height as isize
         }
 
         return Normal
@@ -144,7 +180,7 @@ impl ExecutionContext {
     pub fn run(&mut self, mut simulation: bool) {
         while self.instruction_pointers.len() != 0 {
             if simulation {
-                sleep(Duration::from_millis(100));
+                sleep(Duration::from_millis(500));
                 if let Err(e) = clearscreen::clear() {
                     eprintln!("{e}");
                     simulation = false;
@@ -185,7 +221,7 @@ impl Display for ExecutionContext {
         let mut grid = self.code_grid.to_string();
 
         for ip in &self.instruction_pointers {
-            let str_idx = ip.position.y * (self.code_grid.width+1) + ip.position.x;
+            let str_idx: usize = (ip.position.y as usize * (self.code_grid.width+1) + ip.position.x as usize);
             grid.replace_range(str_idx..=str_idx, "\x1b[32mO\x1b[0m");
         }
 
