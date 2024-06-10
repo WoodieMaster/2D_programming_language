@@ -86,7 +86,7 @@ impl ExecutionContext {
     fn new(code_grid: CodeGrid) -> Self {
         return Self {
             code_grid,
-            instruction_pointers: Vec::from(InstructionPointer::default())
+            instruction_pointers: vec![InstructionPointer::default()]
         }
     }
 
