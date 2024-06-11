@@ -5,11 +5,8 @@ extern crate core;
 
 use std::env;
 use std::ffi::OsString;
-use std::fmt::{Debug, Display, Pointer, Write};
 use std::fs;
-
 use std::path::Path;
-use std::str::FromStr;
 use crate::execution::ExecutionContext;
 
 fn load_file(filepath: &str) -> Result<String, String> {
@@ -22,16 +19,48 @@ fn load_file(filepath: &str) -> Result<String, String> {
 }
 
 fn main() {
-    let mut key_args: Vec<String> = Vec::new();
     let mut pos_args: Vec<String> = Vec::new();
 
-    for arg in env::args().skip(1) {
-        if arg.starts_with('-') {
-            if arg.starts_with("--") {
-                key_args.push(arg[2..arg.len()].to_string())
-            }else {
-                for char in arg[1..arg.len()].chars() {
-                    key_args.push(char.to_string());
+    let mut debug = false;
+    let mut simulation_time = 0u64;
+
+    let mut args = env::args();
+
+    args.next();
+
+    while let Some(arg) = args.next() {
+        if arg.starts_with("--") {
+            match &arg[2..arg.len()] {
+                "debug" => debug = true,
+                "simulate" => {
+                    match args.next() {
+                        None => {
+                            eprintln!("No simulation speed specified");
+                            return;
+                        }
+                        Some(val) => {
+                            match val.parse::<u64>() {
+                                Ok(num) => simulation_time = num,
+                                Err(_) => {
+                                    eprintln!("Invalid value for simulation speed");
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                },
+                other => {
+                    eprintln!("Unknown argument '{other}'");
+                    return;
+                }
+            }
+        }else if arg.starts_with('-') {
+            for ch in arg[2..arg.len()].chars() {
+                match ch {
+                    _ => {
+                        eprintln!("Unknown argument '{ch}'");
+                        return;
+                    }
                 }
             }
         }else {
@@ -41,6 +70,7 @@ fn main() {
 
     if pos_args.len() == 0 {
         eprintln!("No file specified");
+
         return;
     }
 
@@ -48,7 +78,7 @@ fn main() {
         Ok(val) => {
             let mut ec = ExecutionContext::new(&val);
 
-            ec.run(true)
+            ec.run(simulation_time, debug);
         },
         Err(err) => eprintln!("{err}")
     }
