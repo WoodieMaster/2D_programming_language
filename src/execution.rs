@@ -3,6 +3,7 @@ extern crate core;
 use core::fmt;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter, Write};
+use std::ops;
 use std::str::FromStr;
 use std::thread::sleep;
 use std::time::Duration;
@@ -14,6 +15,34 @@ use def::instructions as inst;
 use crate::definitions as def;
 
 type Stack = Vec<i32>;
+
+#[derive(Clone,Eq,PartialEq,Copy)]
+pub enum DebugLevel {
+    NONE = 0,
+    SIMPLE = 1,
+    SIL = 2,
+    SILLY = 3
+}
+
+impl FromStr for DebugLevel {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match &*s.to_lowercase() {
+            "none" => DebugLevel::NONE,
+            "simple" => DebugLevel::SIMPLE,
+            "sil" => DebugLevel::SIL,
+            "silly" => DebugLevel::SILLY,
+            _ => return Err(())
+        })
+    }
+}
+
+impl DebugLevel {
+    fn has(self, other: DebugLevel) -> bool {
+        return self as u8 >= other as u8
+    }
+}
 
 pub struct CodeGrid {
     grid: Vec<Vec<char>>,
@@ -105,10 +134,21 @@ impl Display for Vec2 {
     }
 }
 
-impl Vec2 {
-    fn add(&mut self, other: Vec2) {
-        self.x += other.x;
-        self.y += other.y;
+impl ops::Add<Vec2> for Vec2 {
+    type Output = Vec2;
+
+    fn add(self, rhs: Vec2) -> Self::Output {
+        return Self {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y
+        }
+    }
+}
+
+impl ops::AddAssign<Vec2> for Vec2 {
+    fn add_assign(&mut self, rhs: Self) {
+        self.x += rhs.x;
+        self.y += rhs.y;
     }
 }
 
@@ -154,7 +194,7 @@ impl InstructionPointer {
     }
 
     fn update_pos(&mut self, code_grid: &CodeGrid) {
-        self.position.add(self.movement);
+        self.position = self.position + self.movement;
 
         self.position.x %= code_grid.width as isize;
         if self.position.x < 0 {
@@ -192,12 +232,12 @@ impl InstructionPointer {
                 self.movement = Vec2 {x: 0, y: 1};
 
                 let mut new_ip = InstructionPointer::new(
-                    Vec2 {x: 0, y: 1},
+                    Vec2 {x: 0, y: -1},
                     self.position
                 );
 
-                new_ip.position.add(new_ip.movement);
-                self.position.add(self.movement);
+                new_ip.update_pos(code_grid);
+                self.update_pos(code_grid);
                 return IPUpdateResult::AddIP(new_ip);
             },
             inst::PRINT_STACK_CHAR => {
@@ -267,7 +307,7 @@ impl ExecutionContext {
         }
     }
 
-    pub fn run(&mut self, simulation_time: u64, debug: bool) {
+    pub fn run(&mut self, simulation_time: u64, debug_level: DebugLevel) {
         let start_time = std::time::SystemTime::now();
 
         while self.instruction_pointers.len() != 0 {
@@ -281,10 +321,16 @@ impl ExecutionContext {
                     return;
                 }
 
-                println!("{text}\nstack:{:?}\n\nips:",self.stack);
+                println!("{text}\n");
+                if debug_level.has(DebugLevel::SIL) {
+                    println!("\nstack:{:?}",self.stack);
 
-                for ip in &self.instruction_pointers {
-                    println!("{}",ip);
+                    if debug_level.has(DebugLevel::SILLY) {
+                        println!("\n\nips:");
+                        for ip in &self.instruction_pointers {
+                            println!("{}",ip);
+                        }
+                    }
                 }
             }
 
@@ -311,7 +357,7 @@ impl ExecutionContext {
             }
         }
 
-        if debug {
+        if debug_level.has(DebugLevel::SIMPLE)  {
             let end_time = std::time::SystemTime::now();
 
             match end_time.duration_since(start_time) {
